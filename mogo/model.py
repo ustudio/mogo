@@ -1,33 +1,33 @@
 """
-This is really the core of the library. It's just a dict subclass
-with a few wrapper methods. The idea is that you can access everything
-like normal in pymongo if you wanted to, with keys aplenty, or you can
-access values with attribute-style syntax.
+This is the core of the library. It is a dict subclass with a few wrapper
+methods. The idea is that you can access everything like normal in pymongo if
+you want to, with keys aplenty, or you can access values with attribute-style
+syntax.
 
-Most importantly however, you can add methods to the model which is
-sort of the main point of the MVC pattern of keeping logic with
-the appropriate construct.
+Most importantly you can add methods to the model. This is desired when
+following the Information Expert pattern of placing behavior with the data to
+support it.
 
 Specifying fields is optional, although it is recommended for
 external references.
 
 Usage example:
 
-from mogo import Model
-import hashlib
-from datetime import datetime
+    from mogo import Model
+    import hashlib
+    from datetime import datetime
 
-class UserAccount(Model):
+    class UserAccount(Model):
 
-    name = Field(str)
-    email = Field(str)
-    company = ReferenceField(Company)
-    created_at = Field(datetime, datetime.now)
+        name = Field(str)
+        email = Field(str)
+        company = ReferenceField(Company)
+        created_at = Field(datetime, datetime.now)
 
-    # Custom method example
-    def set_password(self, password):
-        self.password = hashlib.md5(password).hexdigest()
-        self.save()
+        # Custom method example
+        def set_password(self, password):
+            self.password = hashlib.md5(password).hexdigest()
+            self.save()
 
 """
 
@@ -39,6 +39,7 @@ from pymongo.dbref import DBRef
 from pymongo.objectid import ObjectId
 from mogo.decorators import notinstancemethod
 import logging
+
 
 class BiContextual(object):
     """ Probably a terrible, terrible idea. """
@@ -52,9 +53,11 @@ class BiContextual(object):
             return getattr(type, "_class_" + self.name)
         return getattr(obj, "_instance_" + self.name)
 
+
 class InvalidUpdateCall(Exception):
     """ Raised whenever update is called on a new model """
     pass
+
 
 class UnknownField(Exception):
     """ Raised whenever an invalid field is accessed and the
@@ -62,19 +65,20 @@ class UnknownField(Exception):
     """
     pass
 
+
 class NewModelClass(type):
     """ Metaclass for inheriting field lists """
 
     def __new__(cls, name, bases, attributes):
         # Emptying fields by default
         attributes["__fields"] = {}
-        new_model = super(NewModelClass, cls).__new__(cls, name,
-            bases, attributes)
-        new_model._update_fields() # pre-populate fields
+        new_model = super(NewModelClass, cls).__new__(
+            cls, name, bases, attributes)
+        # pre-populate fields
+        new_model._update_fields()
         return new_model
 
     def __setattr__(cls, name, value):
-        """ """
         super(NewModelClass, cls).__setattr__(name, value)
         if isinstance(value, Field):
             # Update the fields, because they have changed
@@ -82,8 +86,7 @@ class NewModelClass(type):
 
 
 class Model(dict):
-    """
-    Subclass this class to create your documents. Basic usage
+    """Subclass this class to create your documents. Basic usage
     is really simple:
 
     class Foo(Model):
@@ -93,8 +96,8 @@ class Model(dict):
     foo.save()
     for result in Foo.find({'user':'admin'}):
         print result.password
-    """
 
+    """
     __metaclass__ = NewModelClass
 
     _id_field = '_id'
@@ -112,12 +115,12 @@ class Model(dict):
         return instance
 
     @classmethod
-    def create(cls, **kwargs):
+    def create(cls, *args, **kwargs):
         """ Create a new model and save it. """
         if hasattr(cls, "new"):
-            model = cls.new(**kwargs)
+            model = cls.new(*args, **kwargs)
         else:
-            model = cls(**kwargs)
+            model = cls(*args, **kwargs)
         model.save()
         return model
 
@@ -144,7 +147,6 @@ class Model(dict):
             else:
                 self[field] = value
 
-
         for field_name in self._fields.values():
             attr = getattr(self.__class__, field_name)
             if not isinstance(attr, Field):
@@ -152,7 +154,7 @@ class Model(dict):
             self._fields[attr.id] = field_name
 
             # set the default
-            if attr.default is not None and not self.has_key(field_name):
+            if attr.default is not None and not field_name in self:
                 self[field_name] = attr._get_default()
 
     @property
@@ -230,7 +232,8 @@ class Model(dict):
             # Field names in collection.
             field = getattr(self.__class__, key)
             field_name = field._get_field_name(self)
-            body[field_name] = self[field_name] # PyMongo value
+            # PyMongo value
+            body[field_name] = self[field_name]
         logging.debug("Checking fields (%s).", checks)
         self._check_required(*checks)
         coll = self._get_collection()
@@ -248,7 +251,7 @@ class Model(dict):
             # or are currently being set
             field = getattr(self.__class__, field_name)
             storage_name = field._get_field_name(self)
-            if not self.has_key(storage_name):
+            if storage_name not in self:
                 if field.required:
                     raise EmptyRequiredField("'%s' is required but empty"
                                              % field_name)
