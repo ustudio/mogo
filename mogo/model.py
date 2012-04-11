@@ -85,6 +85,39 @@ class NewModelClass(type):
             cls._update_fields()
 
 
+class InvalidUpdateCall(Exception):
+    """ Raised whenever update is called on a new model """
+    pass
+
+class UnknownField(Exception):
+    """ Raised whenever an invalid field is accessed and the
+    AUTO_CREATE_FIELDS is False.
+    """
+    pass
+
+
+class NewModelClass(type):
+    """ Metaclass for inheriting field lists """
+
+    def __new__(cls, name, bases, attributes):
+        # Emptying fields by default
+        attributes["__fields"] = {}
+        new_model = super(NewModelClass, cls).__new__(cls, name,
+            bases, attributes)
+        new_model._update_fields() # pre-populate fields
+        if hasattr(new_model, "_child_models"):
+            # Resetting any model register for PolyModels -- better way?
+            new_model._child_models = {}
+        return new_model
+
+    def __setattr__(cls, name, value):
+        """ Catching new field additions to classes """
+        super(NewModelClass, cls).__setattr__(name, value)
+        if isinstance(value, Field):
+            # Update the fields, because they have changed
+            cls._update_fields()
+
+
 class Model(dict):
     """Subclass this class to create your documents. Basic usage
     is really simple:
@@ -115,6 +148,17 @@ class Model(dict):
         return instance
 
     @classmethod
+    def use(cls, session):
+        """ Wraps the class to use a specific connection session """
+        class Wrapped(cls):
+            pass
+        Wrapped.__name__ = cls.__name__
+        connection = session.connection
+        collection = connection.get_collection(Wrapped._get_name())
+        Wrapped._collection = collection
+        return Wrapped
+
+    @classmethod
     def create(cls, *args, **kwargs):
         """ Create a new model and save it. """
         if hasattr(cls, "new"):
@@ -125,17 +169,11 @@ class Model(dict):
         return model
 
     def __init__(self, **kwargs):
-        """ Just initializes the fields. This should ONLY be called
-        from .new() or the Cursor.
-        """
+        """ Creates an instance of the model, without saving it. """
         super(Model, self).__init__()
-        is_new_instance = "_id" not in kwargs
+        is_new_instance = self._id_field not in kwargs
         for field, value in kwargs.iteritems():
-            private_field = field.startswith("_")
-            if private_field:
-                # Setting it in the dict, but leaving it alone
-                self[field] = value
-            elif is_new_instance:
+            if is_new_instance:
                 if field in self._fields.values():
                     # Running validation, if the field exists
                     setattr(self, field, value)
@@ -167,8 +205,6 @@ class Model(dict):
         """ (Re)update the list of fields """
         cls.__fields = {}
         for attr_key in dir(cls):
-            if attr_key.startswith('_'):
-                continue
             attr = getattr(cls, attr_key)
             if not isinstance(attr, Field):
                 continue
@@ -294,12 +330,20 @@ class Model(dict):
         """
         return self._get_id()
 
+    _id = id # for nod
+
     @classmethod
     def find_one(cls, *args, **kwargs):
         """
         Just a wrapper for collection.find_one(). Uses all
         the same arguments.
         """
+        if kwargs and not args:
+            # If you get this exception you should probably be calling first,
+            # not find_one. If you really want find_one, pass an empty dict:
+            # Rule.find_one({}, timeout=False)
+            raise ValueError(
+                'find_one() requires a query when called with keyword arguments')
         coll = cls._get_collection()
         result = coll.find_one(*args, **kwargs)
         if result:
@@ -312,6 +356,12 @@ class Model(dict):
         A wrapper for the pymongo cursor. Uses all the
         same arguments.
         """
+        if kwargs and not args:
+            # If you get this exception you should probably be calling search,
+            # not find. If you really want to call find, pass an empty dict:
+            # Rule.find({}, timeout=False)
+            raise ValueError(
+                'find() requires a query when called with keyword arguments')
         return Cursor(cls, *args, **kwargs)
 
     @classmethod
@@ -340,6 +390,14 @@ class Model(dict):
 
             query[key] = value
         return cls.find(query)
+
+    @classmethod
+    def search_or_create(cls, **kwargs):
+        "search for an instance that matches kwargs or make one with __init__"
+        obj = cls.search( **kwargs ).first()
+        if obj:
+            return obj
+        return cls.create( **kwargs )
 
     @classmethod
     def first(cls, **kwargs):
@@ -432,5 +490,74 @@ class Model(dict):
         """ Returns a DBRef for an document. """
         return DBRef(self._get_name(), self._get_id())
 
-    def __repr__(self):
+    def __unicode__(self):
+        """ Returns string representation. Overwrite in custom models. """
         return "<MogoModel:%s id:%s>" % (self._get_name(), self._get_id())
+
+    def __repr__(self):
+        """ Just points to __unicode__ """
+        return self.__unicode__()
+
+    def __str__(self):
+        """ Just points to __unicode__ """
+        return self.__unicode__()
+
+
+class PolyModel(Model):
+    """ A base class for inherited models """
+
+    _child_models = None
+
+    def __new__(cls, **kwargs):
+        """ Creates a model of the appropriate type """
+        create_class = cls # use the base model by default
+        key_field = getattr(cls, cls.get_child_key(), None)
+        key = kwargs.get(cls.get_child_key())
+        if not key and key_field:
+            key = key_field.default
+        if key in cls._child_models:
+            create_class = cls._child_models[key]
+        return super(PolyModel, cls).__new__(create_class, **kwargs)
+
+    @classmethod
+    def register(cls, name):
+        """ Decorator for registering a submodel """
+        def wrap(child_class):
+            """ Wrap the child class and return it """
+            # Better way to do this?
+            child_class._get_name = classmethod(lambda x: cls._get_name())
+            child_class._polyinfo = {
+                "parent": cls,
+                "name": name
+            }
+            cls._child_models[name] = child_class
+            return child_class
+        if not isinstance(name, basestring) and issubclass(name, cls):
+            # Decorator without arguments
+            child_cls = name
+            name = child_cls.__name__.lower()
+            return wrap(child_cls)
+        return wrap
+
+    @classmethod
+    def _update_search_spec(cls, spec):
+        """ Update the search specification on child polymodels. """
+        if hasattr(cls, "_polyinfo"):
+            name = cls._polyinfo["name"]
+            polyclass = cls._polyinfo["parent"]
+            spec = spec or {}
+            spec.setdefault(polyclass.get_child_key(), name)
+        return spec
+
+    @classmethod
+    def find(cls, spec=None, *args, **kwargs):
+        """ Add key to search params """
+        spec = cls._update_search_spec(spec)
+        return super(PolyModel, cls).find(spec, *args, **kwargs)
+
+    @classmethod
+    def find_one(cls, spec=None, *args, **kwargs):
+        """ Add key to search params for single result """
+        spec = cls._update_search_spec(spec)
+        return super(PolyModel, cls).find_one(spec, *args, **kwargs)
+

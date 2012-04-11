@@ -4,16 +4,20 @@ in mogo Fields.
 """
 
 import unittest
+from mogo import Field, ReferenceField, connect, Model, EnumField
 
-import mogo
-from mogo import Field
+class Base(object):
+    pass
+
+class Sub(Base):
+    pass
 
 
 class MogoFieldTests(unittest.TestCase):
 
     def setUp(self):
         super(MogoFieldTests, self).setUp()
-        self._mongo_connection = mogo.connect("__test_change_field_name")
+        self._mongo_connection = connect("__test_change_field_name")
 
     def tearDown(self):
         super(MogoFieldTests, self).tearDown()
@@ -26,6 +30,8 @@ class MogoFieldTests(unittest.TestCase):
             field = Field(unicode)
             typeless = Field()
             required = Field(required=True)
+            string = Field(basestring)
+            reference = ReferenceField(Base)
 
         mock = MockModel()
         # checks if it is in the model fields (shouldn't be yet)
@@ -33,7 +39,7 @@ class MogoFieldTests(unittest.TestCase):
 
         # NOW we set up fields.
         cls_dict = MockModel.__dict__
-        field_names = ["typeless", "required", "field"]
+        field_names = ["typeless", "required", "field", "string"]
         MockModel._fields = dict([(cls_dict[v].id, v) for v in field_names])
         self.assertEqual(mock.field, None)
 
@@ -50,14 +56,24 @@ class MogoFieldTests(unittest.TestCase):
         mock.typeless = 5
         mock.typeless = "string"
 
+        # Testing issubclass comparison for type checking
+        # neither of these should raise a type error
+        mock = MockModel(string="foobar")
+        mock = MockModel(string=u"foobar")
+
+        base = Base()
+        sub = Sub()
+        mock = MockModel(reference=base)
+        mock = MockModel(reference=sub)
+
     def test_change_field_name(self):
         """It should allow an override of a field's name."""
-        class MockModel(mogo.Model):
+        class MockModel(Model):
             abbreviated = Field(unicode, field_name="abrv")
             long_name = Field(unicode, field_name="ln", required=True)
             regular = Field(unicode, required=True)
 
-        model = MockModel.new(abbreviated=u"lorem ipsum",
+        model = MockModel(abbreviated=u"lorem ipsum",
             long_name=u"malarky", regular=u"meh.")
 
         # Check the model's dictionary.
@@ -102,3 +118,20 @@ class MogoFieldTests(unittest.TestCase):
         # Test search on regular fields.
         fetched = MockModel.search(regular=u"meh.")
         self.assertEqual(1, fetched.count())
+
+    def test_enum_field(self):
+        """ Test the enum field """
+        class EnumModel1(Model):
+            field = EnumField((1, 3, "what"))
+
+        instance = EnumModel1(field=3)
+        self.assertEqual(instance.field, 3)
+        with self.assertRaises(ValueError):
+            instance = EnumModel1(field=False)
+
+        class EnumModel2(Model):
+            field = EnumField(lambda x: x.__class__.__name__)
+        EnumModel2(field="EnumModel2")
+        with self.assertRaises(ValueError):
+            EnumModel1(field="nottheclassname")
+

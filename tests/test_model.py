@@ -1,7 +1,7 @@
 """ Various tests for the Model class """
 
 import mogo
-from mogo.model import Model, InvalidUpdateCall, UnknownField
+from mogo.model import PolyModel, Model, InvalidUpdateCall, UnknownField
 from mogo.field import ReferenceField, Field, EmptyRequiredField
 import unittest
 
@@ -22,37 +22,55 @@ class Foo(Model):
     callback = Field(get_callback=lambda x, y: "foo",
                      set_callback=lambda x, y: "bar")
     reference = ReferenceField(Ref)
-    _ignore_me = Field()
+    _private_field = Field()
 
 
 class Bar(Model):
 
     uid = Field(unicode)
 
-    @classmethod
-    def new(cls):
-        instance = super(Bar, cls).new(uid=u"testing")
-        return instance
-
 class ChildRef(Ref):
     pass
 
+class Person(PolyModel):
+
+    @classmethod
+    def get_child_key(cls):
+        return "role"
+
+    role = Field(unicode, default=u"person")
+
+    def walk(self):
+        """ Default method """
+        return True
+
+@Person.register
+class Child(Person):
+    role = Field(unicode, default=u"child")
+
+@Person.register(name="infant")
+class Infant(Person):
+    age = Field(int, default=3)
+
+    def crawl(self):
+        """ Example of a custom method """
+        return True
+
+    def walk(self):
+        """ Overwriting a method """
+        return False
 
 class MogoTestModel(unittest.TestCase):
 
-    def test_model_new_override(self):
-        bar = Bar.new()
-        self.assertEqual(bar.uid, "testing")
-
     def test_model_fields_init(self):
         """ Test that the model properly retrieves the fields """
-        foo = Foo.new()
+        foo = Foo()
         self.assertTrue("field" in foo._fields.values())
         self.assertTrue("required" in foo._fields.values())
         self.assertTrue("callback" in foo._fields.values())
         self.assertTrue("reference" in foo._fields.values())
         self.assertTrue("default" in foo._fields.values())
-        self.assertFalse("_ignore_me" in foo._fields.values())
+        self.assertTrue("_private_field" in foo._fields.values())
 
     def test_model_create_fields_init(self):
         """ Test that the model creates fields that don't exist """
@@ -89,30 +107,23 @@ class MogoTestModel(unittest.TestCase):
         self.assertRaises(UnknownField, Testing, foo="bar")
 
     def test_default_field(self):
-        foo = Foo.new()
+        foo = Foo()
         self.assertEqual(foo["default"], "default")
         self.assertEqual(foo.default, "default")
 
     def test_required_fields(self):
-        foo = Foo.new()
+        foo = Foo()
         self.assertRaises(EmptyRequiredField, foo.save)
         self.assertRaises(EmptyRequiredField, getattr, foo, "required")
         self.assertRaises(InvalidUpdateCall, foo.update, foo=u"bar")
 
-    def test_new_constructor(self):
-        foo1 = Foo.new()
-        foo2 = Foo.new()
-        foo1.bar = u"testing"
-        foo2.bar = u"whatever"
-        self.assertNotEqual(foo1.bar, foo2.bar)
-
     def test_null_reference(self):
-        foo = Foo.new()
+        foo = Foo()
         foo.reference = None
         self.assertEqual(foo.reference, None)
 
     def test_repr(self):
-        foo = Foo.new()
+        foo = Foo()
         foo["_id"] = 5
         self.assertEqual(str(foo), "<MogoModel:foo id:5>")
 
@@ -121,3 +132,35 @@ class MogoTestModel(unittest.TestCase):
         child_ref = ChildRef(_id="testing") # hardcoding id
         foo.reference = child_ref
         self.assertEqual(foo["reference"].id, child_ref.id)
+
+    def test_id(self):
+        foo = Foo(_id="whoop")
+        self.assertEqual(foo.id, "whoop")
+        self.assertEqual(foo._id, "whoop")
+        self.assertEqual(foo['_id'], "whoop")
+
+
+    def test_inheritance(self):
+        self.assertEqual(Person._get_name(), Child._get_name())
+        self.assertEqual(Person._get_name(), Infant._get_name())
+        person = Person()
+        self.assertTrue(isinstance(person, Person))
+        self.assertTrue(person.walk())
+        self.assertEqual(person.role, "person")
+        with self.assertRaises(AttributeError):
+            person.crawl()
+        child = Person(role=u"child")
+        self.assertTrue(isinstance(child, Child))
+        child2 = Child()
+        self.assertTrue(child2.walk())
+        self.assertEqual(child2.role, "child")
+        child3 = Child(role=u"person")
+        self.assertTrue(isinstance(child3, Person))
+
+        infant = Infant()
+        self.assertTrue(isinstance(infant, Infant))
+        self.assertEqual(infant.age, 3)
+        self.assertTrue(infant.crawl())
+        self.assertFalse(infant.walk())
+        infant2 = Person(age=3, role=u"infant")
+        self.assertTrue(isinstance(infant2, Infant))
