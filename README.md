@@ -291,8 +291,7 @@ PolyModels
 ----------
 MongoDB lets you store any fields in any collection -- this means it is
 particularly well suited for storing and querying across inheritance 
-relationships. I've recently added a new model type of `PolyModel` that
-lets you define this in a (hopefully) simple way.
+relationships. The `PolyModel` lets you define this in a simple way.
 
 ```python
 class Person(PolyModel):
@@ -306,16 +305,15 @@ class Person(PolyModel):
         return True
 
     # required to determine what `type` something is
-    def get_model_key(self):
+    def get_child_key(self):
+        """ Return the field that defines the type of the subclass. """
         return "role"
 ```
 
-As you can see, we use the "role" field to determine what type a person
-is -- by default, they are all just "person" and therefore should return
-a Person instance. We need to register some new people types:
+The `get_child_key` interface must return the name of the field that determines the type of the model and therefore the subclass to construct.
 
 ```python
-@Person.register
+@Person.register("villian")
 class Villain(Person):
     role = Field(unicode, default=u"villain")
 
@@ -340,9 +338,7 @@ class FlipFlopper(Person):
         self.save()
 ```
 
-The PolyModel.register decorator takes an optional value argument, which
-is what is used to compare to the field specified by `get_model_key` in
-the base model. It works with the following pseudo-logic:
+The PolyModel.register decorator takes string argument to compare to the field specified by `get_model_key` in the base model. It works with the following pseudo-logic:
 
 * Create a new Person instance (either from the DB or __init__)
 * key = Person.get_model_key() # in this case, it's "role"

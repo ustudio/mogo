@@ -44,7 +44,7 @@ class Person(PolyModel):
         """ Default method """
         return True
 
-@Person.register
+@Person.register(name="child")
 class Child(Person):
     role = Field(unicode, default=u"child")
 

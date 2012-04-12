@@ -532,11 +532,7 @@ class PolyModel(Model):
             }
             cls._child_models[name] = child_class
             return child_class
-        if not isinstance(name, basestring) and issubclass(name, cls):
-            # Decorator without arguments
-            child_cls = name
-            name = child_cls.__name__.lower()
-            return wrap(child_cls)
+
         return wrap
 
     @classmethod

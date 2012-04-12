@@ -90,7 +90,7 @@ class SportsCar(Car):
         """ Overwritten """
         return True
 
-@Car.register
+@Car.register("convertible")
 class Convertible(SportsCar):
     """ New methods """
 
