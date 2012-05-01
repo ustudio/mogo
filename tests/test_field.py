@@ -3,7 +3,7 @@ A variety of tests to cover the majority of the functionality
 in mogo Fields.
 """
 
-import unittest
+import unittest2 as unittest
 from mogo import Field, ReferenceField, connect, Model, EnumField
 
 class Base(object):

@@ -3,7 +3,7 @@
 import mogo
 from mogo.model import PolyModel, Model, InvalidUpdateCall, UnknownField
 from mogo.field import ReferenceField, Field, EmptyRequiredField
-import unittest
+import unittest2 as unittest
 
 
 class MockCollection(object):
