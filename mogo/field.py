@@ -1,6 +1,9 @@
 """ The basic field attributes. """
 
-from pymongo.dbref import DBRef
+try:
+    from pymongo.dbref import DBRef
+except ImportError:
+    from bson.dbref import DBRef
 
 class EmptyRequiredField(Exception):
     """ Raised when a required field is not set on the model instance. """

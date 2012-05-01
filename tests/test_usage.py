@@ -15,13 +15,17 @@ If for some reason you have a database named "_mogotest", you will
 probably want to change DBNAME. :)
 """
 
-import unittest
+import unittest2 as unittest
 import mogo
 from mogo import PolyModel, Model, Field, ReferenceField, DESC, connect
 from mogo import ConstantField
 from mogo.connection import Connection
 import pymongo
-import pymongo.objectid
+try:
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.objectid import ObjectId
+
 import sys
 from datetime import datetime
 
@@ -146,12 +150,12 @@ class MogoTests(unittest.TestCase):
         foo = Foo()
         foo.bar = u'create_delete'
         idval = foo.save(safe=True)
-        self.assertTrue(type(idval) is pymongo.objectid.ObjectId)
+        self.assertTrue(type(idval) is ObjectId)
         self.assertTrue(foo.id == idval)
 
     def test_search_or_create(self):
         foo = Foo.search_or_create(bar=u'howdy')
-        self.assertIsInstance(foo._id, pymongo.objectid.ObjectId)
+        self.assertIsInstance(foo._id, ObjectId)
         foo.typeless = 4
         foo.save()
 

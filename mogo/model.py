@@ -35,10 +35,17 @@ import mogo
 from mogo.connection import Connection
 from mogo.cursor import Cursor
 from mogo.field import Field, EmptyRequiredField
-from pymongo.dbref import DBRef
-from pymongo.objectid import ObjectId
 from mogo.decorators import notinstancemethod
 import logging
+
+# Due to PyMongo swapping out DBRef...
+# Eventually this can go away.
+try:
+    from pymongo.dbref import DBRef
+    from pymongo.objectid import ObjectId
+except ImportError:
+    from bson.dbref import DBRef
+    from bson.objectid import ObjectId
 
 
 class BiContextual(object):
