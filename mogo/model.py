@@ -172,7 +172,7 @@ class Model(dict):
             model = cls.new(*args, **kwargs)
         else:
             model = cls(*args, **kwargs)
-        model.save()
+        model.save(safe=True)
         return model
 
     def __init__(self, **kwargs):
