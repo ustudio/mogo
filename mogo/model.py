@@ -79,36 +79,6 @@ class NewModelClass(type):
     def __new__(cls, name, bases, attributes):
         # Emptying fields by default
         attributes["__fields"] = {}
-        new_model = super(NewModelClass, cls).__new__(
-            cls, name, bases, attributes)
-        # pre-populate fields
-        new_model._update_fields()
-        return new_model
-
-    def __setattr__(cls, name, value):
-        super(NewModelClass, cls).__setattr__(name, value)
-        if isinstance(value, Field):
-            # Update the fields, because they have changed
-            cls._update_fields()
-
-
-class InvalidUpdateCall(Exception):
-    """ Raised whenever update is called on a new model """
-    pass
-
-class UnknownField(Exception):
-    """ Raised whenever an invalid field is accessed and the
-    AUTO_CREATE_FIELDS is False.
-    """
-    pass
-
-
-class NewModelClass(type):
-    """ Metaclass for inheriting field lists """
-
-    def __new__(cls, name, bases, attributes):
-        # Emptying fields by default
-        attributes["__fields"] = {}
         new_model = super(NewModelClass, cls).__new__(cls, name,
             bases, attributes)
         new_model._update_fields() # pre-populate fields
