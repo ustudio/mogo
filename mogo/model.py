@@ -311,28 +311,25 @@ class Model(dict):
 
     @classmethod
     def find_one(cls, *args, **kwargs):
-        """
-        Just a wrapper for collection.find_one(). Uses all
-        the same arguments.
-        """
+        """Wraps for collection.find_one(). Uses the same arguments."""
         if kwargs and not args:
             # If you get this exception you should probably be calling first,
             # not find_one. If you really want find_one, pass an empty dict:
             # Rule.find_one({}, timeout=False)
             raise ValueError(
                 'find_one() requires a query when called with keyword arguments')
+
         coll = cls._get_collection()
         result = coll.find_one(*args, **kwargs)
+
         if result:
             result = cls(**result)
+
         return result
 
     @classmethod
     def find(cls, *args, **kwargs):
-        """
-        A wrapper for the pymongo cursor. Uses all the
-        same arguments.
-        """
+        """Wraps the pymongo cursor. Uses the same arguments."""
         if kwargs and not args:
             # If you get this exception you should probably be calling search,
             # not find. If you really want to call find, pass an empty dict:
@@ -371,27 +368,27 @@ class Model(dict):
     @classmethod
     def search_or_create(cls, **kwargs):
         "search for an instance that matches kwargs or make one with __init__"
-        obj = cls.search( **kwargs ).first()
+        obj = cls.search(**kwargs).first()
         if obj:
             return obj
-        return cls.create( **kwargs )
+        return cls.create(**kwargs)
 
     @classmethod
     def first(cls, **kwargs):
-        """ Helper for returning Blah.search(foo=bar).first(). """
+        """Helper for returning Blah.search(foo=bar).first()."""
         result = cls.search(**kwargs)
         return result.first()
 
     @classmethod
     def grab(cls, object_id):
-        """ A shortcut to retrieve one object by its id. """
+        """A shortcut to retrieve one object by its id."""
         if type(object_id) != cls._id_type:
             object_id = cls._id_type(object_id)
         return cls.find_one({cls._id_field: object_id})
 
     @classmethod
     def create_index(cls, *args, **kwargs):
-        """ Wrapper for collection create_index() """
+        """Wrapper for collection create_index()."""
         return cls._get_collection().create_index(*args, **kwargs)
 
     @classmethod
