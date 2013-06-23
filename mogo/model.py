@@ -79,9 +79,10 @@ class NewModelClass(type):
     def __new__(cls, name, bases, attributes):
         # Emptying fields by default
         attributes["__fields"] = {}
-        new_model = super(NewModelClass, cls).__new__(cls, name,
-            bases, attributes)
-        new_model._update_fields() # pre-populate fields
+        new_model = super(NewModelClass, cls).__new__(
+            cls, name, bases, attributes)
+        # pre-populate fields
+        new_model._update_fields()
         if hasattr(new_model, "_child_models"):
             # Resetting any model register for PolyModels -- better way?
             new_model._child_models = {}
@@ -110,10 +111,10 @@ class Model(dict):
     """
     __metaclass__ = NewModelClass
 
-    _id_field = '_id'
+    _id_field = "_id"
     _id_type = ObjectId
+    _connection = None
     _name = None
-    _collection = None
     _init_okay = False
     __fields = None
 
@@ -131,8 +132,7 @@ class Model(dict):
             pass
         Wrapped.__name__ = cls.__name__
         connection = session.connection
-        collection = connection.get_collection(Wrapped._get_name())
-        Wrapped._collection = collection
+        Wrapped._connection = connection
         return Wrapped
 
     @classmethod
@@ -205,7 +205,7 @@ class Model(dict):
 
     def save(self, *args, **kwargs):
         """ Passthru to PyMongo's save after checking values """
-        coll = self._get_collection()
+        coll = self.get_collection()
         self._check_required()
         new_object_id = coll.save(self.copy(), *args, **kwargs)
         if not self._get_id():
@@ -215,7 +215,7 @@ class Model(dict):
     @classmethod
     def _class_update(cls, *args, **kwargs):
         """ Direct passthru to PyMongo's update. """
-        coll = cls._get_collection()
+        coll = cls.get_collection()
         # Maybe should do something 'clever' with the query?
         # E.g. transform Model instances to DBRefs automatically?
         return coll.update(*args, **kwargs)
@@ -249,7 +249,7 @@ class Model(dict):
             body[field_name] = self[field_name]
         logging.debug("Checking fields (%s).", checks)
         self._check_required(*checks)
-        coll = self._get_collection()
+        coll = self.get_collection()
         logging.debug("Setting body (%s)", body)
         return coll.update(spec, {"$set":  body}, **pass_kwargs)
 
@@ -275,8 +275,8 @@ class Model(dict):
         Allows all the same arguments (except the spec/id).
         """
         if not self._get_id():
-            raise ValueError('No id has been set, so removal is impossible.')
-        coll = self._get_collection()
+            raise ValueError("No id has been set, so removal is impossible.")
+        coll = self.get_collection()
         return coll.remove(self._get_id(), *args, **kwargs)
 
     # Using notinstancemethod for classmethods which would
@@ -286,13 +286,17 @@ class Model(dict):
     @notinstancemethod
     def remove(cls, *args, **kwargs):
         """ Just a wrapper around the collection's remove. """
-        coll = cls._get_collection()
+        if not args:
+            # If you really want to delete everything, pass an
+            # empty dict: Rule.remove({})
+            raise ValueError("remove() requires a query.")
+        coll = cls.get_collection()
         return coll.remove(*args, **kwargs)
 
     @notinstancemethod
     def drop(cls, *args, **kwargs):
         """ Just a wrapper around the collection's drop. """
-        coll = cls._get_collection()
+        coll = cls.get_collection()
         return coll.drop(*args, **kwargs)
 
     # This is designed so that the end user can still use 'id' as a Field
@@ -307,7 +311,8 @@ class Model(dict):
         """
         return self._get_id()
 
-    _id = id # for nod
+    # for nod
+    _id = id
 
     @classmethod
     def find_one(cls, *args, **kwargs):
@@ -317,9 +322,10 @@ class Model(dict):
             # not find_one. If you really want find_one, pass an empty dict:
             # Rule.find_one({}, timeout=False)
             raise ValueError(
-                'find_one() requires a query when called with keyword arguments')
+                "find_one() requires a query when called with keyword "
+                "arguments")
 
-        coll = cls._get_collection()
+        coll = cls.get_collection()
         result = coll.find_one(*args, **kwargs)
 
         if result:
@@ -335,7 +341,7 @@ class Model(dict):
             # not find. If you really want to call find, pass an empty dict:
             # Rule.find({}, timeout=False)
             raise ValueError(
-                'find() requires a query when called with keyword arguments')
+                "find() requires a query when called with keyword arguments")
         return Cursor(cls, *args, **kwargs)
 
     @classmethod
@@ -344,7 +350,7 @@ class Model(dict):
         A quick wrapper for the pymongo collection map / reduce grouping.
         Will do more with this later.
         """
-        return cls._get_collection().group(*args, **kwargs)
+        return cls.get_collection().group(*args, **kwargs)
 
     @classmethod
     def search(cls, **kwargs):
@@ -389,17 +395,17 @@ class Model(dict):
     @classmethod
     def create_index(cls, *args, **kwargs):
         """Wrapper for collection create_index()."""
-        return cls._get_collection().create_index(*args, **kwargs)
+        return cls.get_collection().create_index(*args, **kwargs)
 
     @classmethod
     def ensure_index(cls, *args, **kwargs):
         """ Wrapper for collection ensure_index() """
-        return cls._get_collection().ensure_index(*args, **kwargs)
+        return cls.get_collection().ensure_index(*args, **kwargs)
 
     @classmethod
     def drop_indexes(cls, *args, **kwargs):
         """ Wrapper for collection drop_indexes() """
-        return cls._get_collection().drop_indexes(*args, **kwargs)
+        return cls.get_collection().drop_indexes(*args, **kwargs)
 
     @classmethod
     def distinct(cls, key):
@@ -409,13 +415,10 @@ class Model(dict):
     # Map Reduce and Group methods eventually go here.
 
     @classmethod
-    def _get_collection(cls):
+    def get_collection(cls):
         """ Connects and caches the collection connection object. """
-        if not cls._collection:
-            conn = Connection.instance()
-            coll = conn.get_collection(cls._get_name())
-            cls._collection = coll
-        return cls._collection
+        connection = cls._connection or Connection.instance()
+        return connection.get_collection(cls._get_name())
 
     @classmethod
     def _get_name(cls):
@@ -437,8 +440,8 @@ class Model(dict):
         this_id = self._get_id()
         other_id = other._get_id()
         if self.__class__.__name__ == other.__class__.__name__ and \
-            this_id and other_id and \
-            this_id == other_id:
+                this_id and other_id and \
+                this_id == other_id:
             return True
         return False
 
@@ -484,7 +487,8 @@ class PolyModel(Model):
 
     def __new__(cls, **kwargs):
         """ Creates a model of the appropriate type """
-        create_class = cls # use the base model by default
+        # use the base model by default
+        create_class = cls
         key_field = getattr(cls, cls.get_child_key(), None)
         key = kwargs.get(cls.get_child_key())
         if not key and key_field:
@@ -530,4 +534,3 @@ class PolyModel(Model):
         """ Add key to search params for single result """
         spec = cls._update_search_spec(spec)
         return super(PolyModel, cls).find_one(spec, *args, **kwargs)
-
